@@ -1,9 +1,9 @@
 ---
-name: commit-and-push
+name: commit
 description: Commit the current project changes to git after scanning them for secrets, then push to the remote. Blocks the commit if any secret, credential or sensitive file is found. Use when the user asks to commit, push, or save changes to git.
 ---
 
-# Commit and push (with secret scan)
+# Commit (with secret scan)
 
 Run from the project root. Never skip the scan.
 
@@ -11,7 +11,7 @@ Run from the project root. Never skip the scan.
 
 2. **Stage only project files.** Use `git add -A`. `.gitignore` already excludes `.venv/`, `data/niftyta.duckdb*`, `data/raw/`, `data/derived/`, `reports/` and `.vscode/`. If something unexpected is staged (large files, data, anything personal), unstage it with `git restore --staged <file>` and mention it.
 
-3. **Scan for secrets.** Run `.claude/skills/commit-and-push/scan_secrets.sh`.
+3. **Scan for secrets.** Run `.claude/skills/commit/scan_secrets.sh`.
    - Exit 0: continue.
    - Exit 1: **stop.** Do not commit or push. Show the user the blocked file and line from the scan output (never print the secret value itself). Unstage the file, then ask the user to remove the secret. If the credential was real, it must be rotated, because it may already be in history.
 
