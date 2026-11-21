@@ -1,0 +1,16 @@
+# Python environment and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Large or regenerable data (rebuild with scripts/sync_daily.py and scripts/sync_indices.py)
+data/niftyta.duckdb*
+data/raw/
+data/derived/
+
+# Generated outputs (rebuild with the scripts)
+reports/
+
+.DS_Store
+.vscode/

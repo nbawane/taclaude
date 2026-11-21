@@ -1,0 +1,9 @@
+# Indian equity delivery cost assumptions. VERIFY against current broker and government rates
+# before relying on results. Rates are fractions of traded value unless noted.
+brokerage_per_order_inr: 0.0        # Zerodha equity delivery brokerage (verify)
+exchange_txn_charge: 0.0000297      # NSE equity transaction charge (verify)
+sebi_fee: 0.000001                  # SEBI turnover fee (verify)
+gst_rate: 0.18                      # GST on brokerage + exchange + SEBI fee
+stamp_duty_buy: 0.00015             # stamp duty, buy side only (verify)
+stt_delivery: 0.001                 # securities transaction tax, delivery, both sides (verify)
+slippage_per_side: 0.0005           # assumed slippage per side (conservative assumption)

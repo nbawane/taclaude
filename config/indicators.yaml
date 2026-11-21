@@ -1,0 +1,14 @@
+# Indicator parameters. Change here, or later via natural-language prompts.
+rsi:
+  period: 14
+ema_fast:
+  period: 9
+ema_slow:
+  period: 21
+sma_short:
+  period: 20
+sma_long:
+  period: 50
+bbands:
+  period: 20
+  std: 2

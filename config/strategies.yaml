@@ -1,0 +1,10 @@
+# Entry/exit rules. Signals use CLOSED daily bars; trades execute at the NEXT session's open.
+rsi:
+  entry_cross_above: 30
+  exit_cross_below: 70
+ema_cross:
+  fast: ema_9
+  slow: ema_21
+bbands:
+  entry: close_back_above_lower
+  exit: close_back_below_upper

@@ -1,0 +1,22 @@
+[project]
+name = "niftyta"
+version = "0.1.0"
+description = "Free NSE technical analysis, backtesting and Pine Script generator"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "requests>=2.31",
+    "TA-Lib>=0.4.30",
+    "vectorbt>=0.26",
+    "matplotlib>=3.8",
+    "lightweight-charts>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: needs internet access (live yfinance download)"]
