@@ -21,6 +21,7 @@ from .provider import COLUMNS, DayProvider
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "nse_bhavcopy"
+EQUITY_SERIES = ["EQ", "BE", "BZ"]  # in order of preference
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
 FULL_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{stamp}.csv"
 HIST_URL = "https://nsearchives.nseindia.com/content/historical/EQUITIES/{yyyy}/{mon}/cm{stamp}bhav.csv.zip"
@@ -39,7 +40,8 @@ def _read_raw(path: Path) -> pd.DataFrame:
 
 
 def parse_bhavcopy(path: Path) -> pd.DataFrame:
-    """Parse one day's file (either layout) into EQ-series rows indexed by symbol."""
+    """Parse one day's file (either layout) into equity rows indexed by symbol.
+    Keeps EQ plus BE/BZ (trade-to-trade), so a stock moved between them has no gap."""
     raw = _read_raw(path)
     raw.columns = raw.columns.str.strip()
     if "DATE1" in raw.columns:  # newer layout
@@ -50,7 +52,10 @@ def parse_bhavcopy(path: Path) -> pd.DataFrame:
         deliv = None
     for col in ("SYMBOL", "SERIES", date_col):
         raw[col] = raw[col].astype(str).str.strip()
-    eq = raw[raw["SERIES"] == "EQ"]
+    eq = raw[raw["SERIES"].isin(EQUITY_SERIES)]
+    # one row per symbol; if it appears in several series, EQ wins over BE over BZ
+    eq = eq.sort_values("SERIES", key=lambda s: s.map(EQUITY_SERIES.index), kind="stable")
+    eq = eq.drop_duplicates("SYMBOL").sort_index()
     num = lambda c: pd.to_numeric(eq[c], errors="coerce").values  # noqa: E731
     out = pd.DataFrame({
         "symbol": eq["SYMBOL"].values,
@@ -95,6 +100,6 @@ class NSEBhavcopyProvider(DayProvider):
             bars = parse_bhavcopy(path)
             # On closed days NSE serves the previous session's file: check the file's own date.
             if bars.empty or not (bars["date"] == pd.Timestamp(day)).any():
-                return None
+                continue  # stale file in this layout; the other may still have the session
             return bars
-        return None  # neither layout exists: no session that day
+        return None  # no layout has this date: no session that day

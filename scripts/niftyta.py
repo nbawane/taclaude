@@ -25,7 +25,8 @@ from niftyta.indicators.core import load_params  # noqa: E402
 
 MIN_OOS_TRADES = 5  # rankings below this are statistically meaningless
 
-STRATEGY_LABEL = {"rsi": "RSI(14) 30/70", "ema_cross": "EMA 9/21 cross", "bbands": "Bollinger 20,2"}
+STRATEGY_LABEL = {"rsi": "RSI(14) 30/70", "ema_cross": "EMA 9/21 cross", "bbands": "Bollinger 20,2",
+                  "gfs": "GFS + divergence"}
 
 
 def best_strategy(summary: pd.DataFrame, keys: list[str]) -> str | None:
@@ -59,6 +60,24 @@ def main() -> None:
 
     reports = ROOT / "reports"
     reports.mkdir(exist_ok=True)
+    if "gfs" in req.strategies:
+        from niftyta.data.store import PriceStore as _S
+        from niftyta.pipeline.gfs_run import run_gfs
+        from datetime import date as _d, timedelta as _t
+        for sym in req.symbols:
+            st = _S()
+            end = _d.today() + _t(days=1)
+            daily = st.load(sym, end.replace(year=end.year - req.years), end)
+            st.close()
+            if daily.empty:
+                print(f"  skip {sym}: no stored data"); continue
+            summary, trades = run_gfs(daily, sym)
+            summary.to_csv(reports / f"{sym}_GFS_summary.csv", index=False, float_format="%.4f")
+            print(f"\n{sym} GFS summary (full, in-sample, out-of-sample):")
+            with pd.option_context("display.width", 220, "display.max_columns", 20):
+                print(summary[["variant", "exit", "period", "trades", "win_rate", "profit_factor",
+                               "max_drawdown", "expectancy_R", "total_return"]].round(3).to_string(index=False))
+        return
     rows = []
     for sym in req.symbols:
         for tf in req.timeframes:

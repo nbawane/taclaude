@@ -8,10 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import matplotlib  # noqa: E402
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
@@ -21,6 +17,7 @@ from niftyta.indicators.core import load_params  # noqa: E402
 from niftyta.nl.parse import parse_prompt  # noqa: E402
 from niftyta.pine.generator import generate  # noqa: E402
 from niftyta.pipeline.run import analyse  # noqa: E402
+from niftyta.reporting.charts import equity_figure  # noqa: E402
 
 st.set_page_config(page_title="NiftyTA", layout="wide")
 st.title("NiftyTA: technical analysis and backtesting")
@@ -69,22 +66,10 @@ if st.button("Run") or prompt:
 
     show = a.summary[["period", "strategy", "total_return", "cagr", "max_drawdown", "sharpe",
                       "trades", "win_rate", "profit_factor", "exposure"]]
-    st.dataframe(show.round(3), use_container_width=True, hide_index=True)
+    st.dataframe(show.round(3), width="stretch", hide_index=True)
 
     full = [r for r in a.results if r.period == "full"]
-    fig, (ax_eq, ax_dd) = plt.subplots(2, 1, figsize=(11, 7), sharex=True,
-                                       gridspec_kw={"height_ratios": [3, 1.5]})
-    for r in full:
-        eq = r.result.equity / r.result.equity.iloc[0] * 100
-        dd = (eq / eq.cummax() - 1) * 100
-        lw = 2 if r.strategy == BUY_AND_HOLD else 1
-        ax_eq.plot(eq.index, eq, lw=lw, label=r.strategy)
-        ax_dd.plot(dd.index, dd, lw=lw)
-    ax_eq.set_yscale("log"); ax_eq.set_ylabel("Equity (start = 100)"); ax_eq.legend(fontsize=8)
-    ax_eq.grid(alpha=0.3); ax_dd.set_ylabel("Drawdown %"); ax_dd.grid(alpha=0.3)
-    fig.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
+    st.plotly_chart(equity_figure({r.strategy: r.result.equity for r in full}), width="stretch")
 
     if req.pine and len(req.strategies):
         oos = a.summary[(a.summary.period == "out_of_sample") & (a.summary.strategy != BUY_AND_HOLD)].dropna(subset=["sharpe"])

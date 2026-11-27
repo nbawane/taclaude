@@ -5,6 +5,46 @@ rsi:
 ema_cross:
   fast: ema_9
   slow: ema_21
+sma_cross:
+  period: 20              # buy when close crosses above the SMA, sell when it crosses below
 bbands:
   entry: close_back_above_lower
   exit: close_back_below_upper
+
+# Bullish GFS (Grandfather-Father-Son) + RSI divergence. Source of truth: docs/strategies/gfs_spec.md
+gfs:
+  grandfather_tf: 1M        # 1D, 1W or 1M; last CLOSED bar only
+  father_tf: 1W
+  son_tf: 1D
+  rsi_period: 14
+  htf_rsi_min: 60           # Grandfather and Father RSI must be above this
+  pullback_low: 35          # Son RSI must have been inside [low, high] within the last bars
+  pullback_high: 45
+  pullback_lookback: 5
+  alert_valid_bars: 2       # buy stop stays live for 2 bars after the alert
+  divergence_swing_bars: 2  # pivot confirmation bars on each side
+  divergence_min_gap: 10    # bars between the two swing lows
+  divergence_max_gap: 30
+  divergence_recent: 5      # second swing low must be within the last 5 bars
+  exit_rr: 2.5              # mode A target
+  scale_rsi: 60             # mode B: sell 50% when Son RSI closes at or above this
+  scale_fraction: 0.5
+  rest_exit_rsi: 55         # mode B: sell the rest when Son RSI closes below this
+
+# Multi-timeframe SMA breakout. Rules: src/niftyta/backtest/mtf_sma.py
+mtf_sma:
+  period: 20          # SMA length on daily, weekly and monthly candles
+  confirm_days: 3     # daily closes in a row above the daily SMA
+
+# Chosen by scripts/mtf_sma_optimize.py (rewritten on each run)
+mtf_sma_portfolio:
+  risk_pct: 0.005
+  max_positions: 4
+  max_position_pct: 0.25
+  stop: atr
+  stop_atr: 2.0
+  exit: target
+  target_r: 3.0
+  trail_atr: 3.0
+  initial_cash: 100000.0
+  filters: []

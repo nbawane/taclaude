@@ -61,6 +61,7 @@ def build_frame(symbol: str, tf: str, years: int) -> pd.DataFrame:
 def to_chart_frame(df: pd.DataFrame, cols: list[str], rename: dict | None = None) -> pd.DataFrame:
     """lightweight-charts needs a 'time' column; warm-up NaNs are dropped so lines start where data exists."""
     out = df[cols].dropna().reset_index().rename(columns={"date": "time"})
+    out["time"] = out["time"].astype("datetime64[ns]")   # the library assumes nanoseconds
     return out.rename(columns=rename or {})
 
 

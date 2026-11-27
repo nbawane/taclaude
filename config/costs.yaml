@@ -7,3 +7,4 @@ gst_rate: 0.18                      # GST on brokerage + exchange + SEBI fee
 stamp_duty_buy: 0.00015             # stamp duty, buy side only (verify)
 stt_delivery: 0.001                 # securities transaction tax, delivery, both sides (verify)
 slippage_per_side: 0.0005           # assumed slippage per side (conservative assumption)
+dp_charge_per_sell_inr: 15.34       # depository charge per stock sold per day, incl. GST (Zerodha; verify)

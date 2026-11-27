@@ -29,3 +29,9 @@ def bbands_signals(close: pd.Series, lower: pd.Series, upper: pd.Series):
     entry = (below_lower.shift(1, fill_value=False)) & (close > lower)   # back above lower band
     exit_ = (above_upper.shift(1, fill_value=False)) & (close < upper)   # back below upper band
     return entry.fillna(False).to_numpy(), exit_.fillna(False).to_numpy()
+
+
+def sma_cross_signals(close: pd.Series, period: int = 20):
+    """Entry: close crosses above its simple moving average. Exit: close crosses below it."""
+    diff = close - close.rolling(period).mean()
+    return _crosses_above(diff, 0.0).to_numpy(bool), _crosses_below(diff, 0.0).to_numpy(bool)

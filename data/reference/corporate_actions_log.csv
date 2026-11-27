@@ -1,0 +1,17 @@
+symbol,ex_date,purpose,kind,factor,note,applied
+RELIANCE,2015-05-08,Dividend - Rs 10/- Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2016-03-17,Interim Dividend - Rs 10.50/- Per Share (Purpose Revised),dividend,,not a price adjustment; not applied,False
+RELIANCE,2017-07-13,Dividend - Rs 11/- Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2017-09-07,Bonus 1:1,bonus,0.5,1 new for every 1 held,True
+RELIANCE,2018-06-27,Dividend- Rs 6 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2019-08-02,Annual General Meeting/Dividend - Rs 6.50 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2020-05-13,Rights 1:15 @ Premium Rs 1247,rights,,needs issue price and ratio; not applied,False
+RELIANCE,2020-07-02,Dividend - Rs 6.50 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2021-06-11,Dividend - Rs 7 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2022-08-18,Dividend - Rs 8 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2023-07-20,Demerger,demerger,,price effect not in the file; not applied,False
+RELIANCE,2023-08-21,Dividend - Rs 9 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2024-08-19,Dividend - Rs 10 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2024-10-28,Bonus 1:1,bonus,0.5,1 new for every 1 held,True
+RELIANCE,2025-08-14,Dividend - Rs 5.5 Per Share,dividend,,not a price adjustment; not applied,False
+RELIANCE,2026-06-05,Dividend - Rs 6 Per Share,dividend,,not a price adjustment; not applied,False

@@ -7,7 +7,7 @@ HEADER = ("Index Name,Index Date,Open Index Value,High Index Value,Low Index Val
 
 
 def write(tmp_path, day_str, close=17599.15):
-    f = tmp_path / f"ind_close_all_{day_str}.csv"
+    f = tmp_path / "ind_close_all_20230406.csv"  # the name the code looks for, so nothing is downloaded
     f.write_text("\n".join([HEADER, f"Nifty 50,{day_str},1,2,0.5,{close},0,0,1,1,1,1,1"]))
     return f
 

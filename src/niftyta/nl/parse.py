@@ -11,6 +11,7 @@ from ..universe import index_symbols
 STRATEGY_WORDS = {
     "rsi": "rsi", "ema": "ema_cross", "ema crossover": "ema_cross", "crossover": "ema_cross",
     "bollinger": "bbands", "bollinger band": "bbands", "bollinger bands": "bbands", "bb": "bbands",
+    "gfs": "gfs", "grandfather": "gfs", "grandfather father son": "gfs", "divergence": "gfs",
 }
 UNSUPPORTED = ["macd", "trix", "supertrend", "sma", "stochastic", "adx", "vwap", "ichimoku"]
 TIMEFRAME_WORDS = {"daily": "1D", "day": "1D", "weekly": "1W", "week": "1W", "monthly": "1M", "month": "1M"}
@@ -65,6 +66,8 @@ def parse_prompt(text: str, known_symbols: set[str]) -> Request:
     for word, key in STRATEGY_WORDS.items():
         if re.search(rf"\b{re.escape(word)}\b", low) and key not in req.strategies:
             req.strategies.append(key)
+    if "gfs" in req.strategies:
+        req.strategies = ["gfs"]  # GFS runs on its own; it is not mixed with the other rule sets
     req.strategies = req.strategies or ["rsi", "ema_cross", "bbands"]
     for u in UNSUPPORTED:
         if re.search(rf"\b{u}\b", low):

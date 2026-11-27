@@ -160,3 +160,37 @@ def write(strategy_key: str, symbol: str, timeframe: str, params: dict, out_dir:
     pine_path.write_text(source)
     notes_path.write_text(notes)
     return pine_path, notes_path
+
+
+# ---------- GFS (Grandfather-Father-Son + RSI divergence) ----------
+GFS_TEMPLATE = Path(__file__).with_name("gfs_template.pine")
+
+
+def generate_gfs(symbol: str, params: dict | None = None, costs: dict | None = None) -> str:
+    """Pine v6 source for the GFS strategy. Defaults come from the `gfs` block of config/strategies.yaml.
+    Run it on the Son timeframe chart. Spec: docs/strategies/gfs_spec.md."""
+    g = params or _load_strategy_config()["gfs"]
+    c = costs or load_costs()
+    vals = {
+        "grandfather_tf": {"1D": "D", "1W": "W", "1M": "M"}[g["grandfather_tf"]],
+        "father_tf": {"1D": "D", "1W": "W", "1M": "M"}[g["father_tf"]],
+        "rsi_period": g["rsi_period"], "htf_rsi_min": g["htf_rsi_min"],
+        "pullback_low": g["pullback_low"], "pullback_high": g["pullback_high"],
+        "pullback_lookback": g["pullback_lookback"], "alert_valid_bars": g["alert_valid_bars"],
+        "divergence_swing_bars": g["divergence_swing_bars"], "divergence_min_gap": g["divergence_min_gap"],
+        "divergence_max_gap": g["divergence_max_gap"], "divergence_recent": g["divergence_recent"],
+        "exit_rr": g["exit_rr"], "scale_rsi": g["scale_rsi"], "scale_pct": g["scale_fraction"] * 100,
+        "rest_exit_rsi": g["rest_exit_rsi"], "commission": f"{_commission_pct(c):.4f}",
+        "title": f"{symbol} GFS + RSI Divergence ({g['son_tf']}) - NiftyTA",
+    }
+    src = GFS_TEMPLATE.read_text()
+    for k, v in vals.items():
+        src = src.replace(f"@{k}@", str(v))
+    return src
+
+
+def write_gfs(symbol: str, out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{symbol}_gfs.pine"
+    path.write_text(generate_gfs(symbol))
+    return path

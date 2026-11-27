@@ -17,7 +17,7 @@ from .validate import symbol_gaps, validate_day
 
 @dataclass
 class SyncReport:
-    weekdays_checked: int = 0
+    days_checked: int = 0
     already_cached: int = 0
     downloaded_traded: int = 0
     marked_holiday: int = 0
@@ -26,7 +26,7 @@ class SyncReport:
     stopped_early: bool = False
 
     def summary(self) -> str:
-        return (f"weekdays {self.weekdays_checked}, cached {self.already_cached}, "
+        return (f"days {self.days_checked}, cached {self.already_cached}, "
                 f"downloaded {self.downloaded_traded}, holidays {self.marked_holiday}, "
                 f"rows dropped {self.rows_dropped}, not yet published {len(self.not_yet_published)}"
                 + (" (stopped early; rerun to continue)" if self.stopped_early else ""))
@@ -34,14 +34,15 @@ class SyncReport:
 
 def sync_days(start: date, end: date, store: PriceStore, provider: DayProvider,
               budget_seconds: float | None = None) -> SyncReport:
-    """Download and store every weekday in [start, end) not yet recorded.
+    """Download and store every calendar day in [start, end) not yet recorded
+    (weekends included: NSE holds Budget-day and Muhurat sessions on them).
     With budget_seconds, stop after that much time; a later run resumes where it left off."""
     rep = SyncReport()
     today = date.today()
     t0 = time.monotonic()
-    for ts in pd.bdate_range(start, end - timedelta(days=1)):
+    for ts in pd.date_range(start, end - timedelta(days=1)):
         day = ts.date()
-        rep.weekdays_checked += 1
+        rep.days_checked += 1
         if store.day_status(day) is not None:
             rep.already_cached += 1
             continue

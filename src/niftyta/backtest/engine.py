@@ -2,7 +2,7 @@
 Costs: buy-side and sell-side charges from costs.yaml, plus slippage on each fill price."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -16,6 +16,7 @@ class Result:
     trades: pd.DataFrame
     exposure: float           # fraction of bars with an open position
     open_at_end: bool
+    open_positions: list = field(default_factory=list)   # filled by the portfolio engine
 
 
 def run_backtest(df: pd.DataFrame, entries: np.ndarray, exits: np.ndarray,

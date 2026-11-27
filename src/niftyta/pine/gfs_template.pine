@@ -1,0 +1,108 @@
+//@version=6
+// Bullish GFS (Grandfather-Father-Son) + RSI divergence. Spec: docs/strategies/gfs_spec.md
+// Choices: docs/strategies/gfs_interpretation.md. Run on the Son timeframe (daily by default).
+strategy("@title@", overlay=true, initial_capital=100000, currency=currency.INR,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0,
+     commission_type=strategy.commission.percent, commission_value=@commission@, process_orders_on_close=false)
+
+gfTf      = input.timeframe("@grandfather_tf@", "Grandfather TF")
+fTf       = input.timeframe("@father_tf@", "Father TF")
+rsiLen    = input.int(@rsi_period@, "RSI length")
+htfMin    = input.float(@htf_rsi_min@, "Grandfather and Father RSI above")
+pbLo      = input.float(@pullback_low@, "Pullback RSI low")
+pbHi      = input.float(@pullback_high@, "Pullback RSI high")
+pbLook    = input.int(@pullback_lookback@, "Pullback lookback bars")
+validBars = input.int(@alert_valid_bars@, "Buy stop valid bars")
+swing     = input.int(@divergence_swing_bars@, "Swing pivot bars each side")
+minGap    = input.int(@divergence_min_gap@, "Divergence min gap")
+maxGap    = input.int(@divergence_max_gap@, "Divergence max gap")
+recent    = input.int(@divergence_recent@, "Second swing low within last N bars")
+rr        = input.float(@exit_rr@, "Mode A: risk-reward")
+scaleRsi  = input.float(@scale_rsi@, "Mode B: scale out RSI")
+scaleFrac = input.float(@scale_pct@, "Mode B: scale out %")
+restRsi   = input.float(@rest_exit_rsi@, "Mode B: exit rest below RSI")
+trigMode  = input.string("Mode 1", "Entry trigger", options=["Mode 1", "Mode 2"])
+exitMode  = input.string("A", "Exit mode", options=["A", "B"])
+
+// Higher-timeframe RSI of the last CLOSED bar (no lookahead): [1] with lookahead_on
+gfRsi = request.security(syminfo.tickerid, gfTf, ta.rsi(close, rsiLen)[1], lookahead=barmerge.lookahead_on)
+fRsi  = request.security(syminfo.tickerid, fTf, ta.rsi(close, rsiLen)[1], lookahead=barmerge.lookahead_on)
+sonRsi = ta.rsi(close, rsiLen)
+
+htfOk    = gfRsi > htfMin and fRsi > htfMin
+inZone   = sonRsi >= pbLo and sonRsi <= pbHi
+pullback = ta.barssince(inZone) <= pbLook - 1
+gate     = htfOk and pullback
+bullish  = close > open
+
+mode1 = gate and sonRsi > sonRsi[1] and bullish
+
+// Swing lows, known only swing bars after the pivot
+pl = ta.pivotlow(low, swing, swing)
+var array<int> pIdx = array.new<int>()
+var array<float> pLow = array.new<float>()
+var array<float> pRsi = array.new<float>()
+if not na(pl)
+    array.push(pIdx, bar_index - swing)
+    array.push(pLow, pl)
+    array.push(pRsi, sonRsi[swing])
+
+hasDivergence() =>
+    bool ok = false
+    int n = array.size(pIdx)
+    for i = 0 to n - 1
+        int p2 = array.get(pIdx, i)
+        int age = bar_index - p2
+        if age >= swing and age <= recent and array.get(pRsi, i) >= pbLo and array.get(pRsi, i) <= pbHi
+            for j = 0 to n - 1
+                int gap = p2 - array.get(pIdx, j)
+                if gap >= minGap and gap <= maxGap and array.get(pLow, i) < array.get(pLow, j) and array.get(pRsi, i) > array.get(pRsi, j)
+                    ok := true
+    ok
+
+mode2 = gate and bullish and hasDivergence()
+trigger = trigMode == "Mode 1" ? mode1 : mode2
+
+// Alert -> buy stop above the alert high, valid for validBars bars, cancelled if the alert low is breached
+var float stopPx = na
+var float slPx = na
+var int alertBar = na
+var float curSl = na
+var float tgt = na
+var bool scaled = false
+
+flat = strategy.position_size == 0
+justFilled = strategy.position_size > 0 and strategy.position_size[1] == 0
+
+if justFilled
+    curSl := slPx
+    tgt := strategy.position_avg_price + rr * (strategy.position_avg_price - slPx)
+    scaled := false
+    stopPx := na
+
+if flat and not justFilled and not na(stopPx) and bar_index > alertBar
+    if low <= slPx or bar_index >= alertBar + validBars
+        strategy.cancel("L")
+        stopPx := na
+
+if flat and na(stopPx) and trigger
+    stopPx := high
+    slPx := low
+    alertBar := bar_index
+    strategy.entry("L", strategy.long, stop=stopPx)
+
+if strategy.position_size > 0
+    if exitMode == "B"
+        if not scaled and sonRsi >= scaleRsi
+            strategy.close("L", qty_percent=scaleFrac, comment="Scale out")
+            curSl := strategy.position_avg_price
+            scaled := true
+        if scaled and sonRsi < restRsi
+            strategy.close_all(comment="RSI below exit")
+        strategy.exit("X", "L", stop=curSl)
+    else
+        strategy.exit("X", "L", stop=curSl, limit=tgt)
+
+plotshape(mode1 and flat, "Mode 1 alert", location=location.belowbar, style=shape.triangleup, color=color.green, size=size.tiny)
+plotshape(mode2 and flat, "Mode 2 alert", location=location.belowbar, style=shape.diamond, color=color.blue, size=size.tiny)
+plot(strategy.position_size > 0 ? curSl : na, "Stop", color=color.red, style=plot.style_linebr)

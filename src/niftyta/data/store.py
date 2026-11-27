@@ -31,8 +31,44 @@ CREATE TABLE IF NOT EXISTS index_daily (
     volume DOUBLE, turnover_cr DOUBLE,
     PRIMARY KEY (index_name, date)
 );
+CREATE TABLE IF NOT EXISTS tradingview_prices_1h (   -- TradingView hourly bars, kept apart from NSE data
+    symbol    VARCHAR NOT NULL,         -- NSE symbol without the exchange prefix, e.g. RELIANCE
+    ts        TIMESTAMP NOT NULL,       -- bar open time, UTC
+    open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE,
+    volume    DOUBLE,
+    PRIMARY KEY (symbol, ts)             -- prices are split-adjusted only (TradingView)
+);
+CREATE TABLE IF NOT EXISTS tv_fetch_progress (        -- resume state for scripts/fetch_tradingview_1h.py
+    symbol     VARCHAR PRIMARY KEY,
+    tv_symbol  VARCHAR,
+    status     VARCHAR NOT NULL,        -- pending | done | failed
+    bars       INTEGER,
+    first_ts   TIMESTAMP,
+    last_ts    TIMESTAMP,
+    attempts   INTEGER DEFAULT 0,
+    error      VARCHAR,
+    updated_at TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS yfinance_prices_daily (    -- Yahoo Finance daily bars, kept apart from NSE data
+    symbol    VARCHAR NOT NULL,         -- NSE symbol without suffix, e.g. RELIANCE (Yahoo ticker RELIANCE.NS)
+    date      DATE NOT NULL,
+    open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE,   -- split-adjusted
+    adj_close DOUBLE,                   -- split and dividend adjusted
+    volume    DOUBLE,
+    PRIMARY KEY (symbol, date)
+);
+CREATE TABLE IF NOT EXISTS yf_fetch_progress (        -- resume state for scripts/fetch_yfinance_daily.py
+    symbol     VARCHAR PRIMARY KEY,
+    status     VARCHAR NOT NULL,        -- done | failed
+    bars       INTEGER,
+    first_date DATE,
+    last_date  DATE,
+    attempts   INTEGER DEFAULT 0,
+    error      VARCHAR,
+    updated_at TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS trading_days (
-    date       DATE PRIMARY KEY,        -- every weekday we have checked
+    date       DATE PRIMARY KEY,        -- every calendar day we have checked
     status     VARCHAR NOT NULL,        -- 'traded' or 'holiday'
     fetched_at TIMESTAMP NOT NULL       -- UTC
 );
@@ -79,6 +115,19 @@ class PriceStore:
                 "FROM incoming")
         finally:
             self.conn.unregister("incoming")
+        return len(frame)
+
+    def upsert_tv_1h(self, df: pd.DataFrame) -> int:
+        """df with columns symbol, ts (UTC), open, high, low, close, volume. Re-inserts overwrite."""
+        if df.empty:
+            return 0
+        frame = df[["symbol", "ts", "open", "high", "low", "close", "volume"]]
+        self.conn.register("incoming_tv", frame)
+        try:
+            self.conn.execute("INSERT OR REPLACE INTO tradingview_prices_1h SELECT symbol, CAST(ts AS TIMESTAMP), "
+                              "open, high, low, close, volume FROM incoming_tv")
+        finally:
+            self.conn.unregister("incoming_tv")
         return len(frame)
 
     def load(self, symbol: str, start: date, end: date) -> pd.DataFrame:

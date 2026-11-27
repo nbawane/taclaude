@@ -1,5 +1,6 @@
 from datetime import date
 
+import duckdb
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from niftyta.data.nse_provider import NSEBhavcopyProvider, parse_bhavcopy
 from niftyta.data.provider import COLUMNS, DayProvider
 from niftyta.data.service import get_daily, sync_days
-from niftyta.data.store import PriceStore
+from niftyta.data.store import DEFAULT_DB, PriceStore
 from niftyta.data.validate import symbol_gaps, validate_day
 
 HEADER = ("SYMBOL, SERIES, DATE1, PREV_CLOSE, OPEN_PRICE, HIGH_PRICE, LOW_PRICE, LAST_PRICE, "
@@ -38,15 +39,18 @@ def make_day(day, symbols=("RELIANCE", "TCS")):
     return pd.DataFrame(rows).set_index("symbol")
 
 
-def test_parse_bhavcopy_keeps_only_eq(tmp_path):
+def test_parse_bhavcopy_prefers_eq_and_keeps_be_bz(tmp_path):
     f = tmp_path / "b.csv"
     f.write_text("\n".join([HEADER,
                             bar_row("RELIANCE", date(2024, 11, 25), 1290, 1304.45, 1282.45, 1287),
-                            bar_row("RELIANCE", date(2024, 11, 25), 1, 1, 1, 1, series="BE")]))
+                            bar_row("RELIANCE", date(2024, 11, 25), 1, 1, 1, 1, series="BE"),
+                            bar_row("TTML", date(2024, 11, 25), 5, 6, 4, 5, series="BE"),
+                            bar_row("BADCO", date(2024, 11, 25), 2, 3, 1, 2, series="BZ"),
+                            bar_row("SOMEBOND", date(2024, 11, 25), 9, 9, 9, 9, series="GS")]))
     df = parse_bhavcopy(f)
-    assert list(df.index) == ["RELIANCE"]
-    assert df.iloc[0]["close"] == 1287 and df.iloc[0]["deliv_qty"] == 500
-    assert df.iloc[0]["date"] == pd.Timestamp("2024-11-25")
+    assert sorted(df.index) == ["BADCO", "RELIANCE", "TTML"]
+    assert df.loc["RELIANCE", "close"] == 1287 and df.loc["RELIANCE", "deliv_qty"] == 500
+    assert df.loc["RELIANCE", "date"] == pd.Timestamp("2024-11-25")
 
 
 def test_validate_day_drops_duplicates_and_bad_rows():
@@ -76,6 +80,14 @@ def test_sync_downloads_each_day_once_and_records_holidays(tmp_path):
     store.close()
 
 
+def test_sync_picks_up_weekend_sessions(tmp_path):
+    store = PriceStore(tmp_path / "t.db")
+    p = FakeDayProvider({date(2026, 2, 1): make_day("2026-02-01")})  # Sunday, Budget day
+    rep = sync_days(date(2026, 1, 31), date(2026, 2, 2), store, p)
+    assert rep.downloaded_traded == 1 and store.day_status(date(2026, 2, 1)) == "traded"
+    store.close()
+
+
 def test_get_daily_returns_symbol_and_gap(tmp_path):
     store = PriceStore(tmp_path / "t.db")
     days = {}
@@ -97,13 +109,16 @@ def test_store_upsert_is_idempotent(tmp_path):
     store.close()
 
 
-@pytest.mark.network
-def test_live_nse_reliance_five_years(tmp_path):
-    store = PriceStore(tmp_path / "live.db")
-    df, gaps, rep = get_daily("RELIANCE", years=5, store=store, provider=NSEBhavcopyProvider(raw_dir=tmp_path / "raw", pause_seconds=0.2))
+@pytest.mark.skipif(not DEFAULT_DB.exists(), reason="no stored database")
+def test_stored_reliance_five_years():
+    """Checks the data already in data/niftyta.duckdb (opened read-only, nothing is downloaded)."""
+    with duckdb.connect(str(DEFAULT_DB), read_only=True) as conn:
+        df = conn.execute(
+            "SELECT date, close FROM prices_daily WHERE symbol = 'RELIANCE' "
+            "AND date >= (SELECT max(date) FROM prices_daily) - INTERVAL 5 YEAR ORDER BY date").df()
     assert len(df) > 1000
-    assert df.index.is_unique and df.index.is_monotonic_increasing
-    store.close()
+    assert df["date"].is_unique and df["date"].is_monotonic_increasing
+    assert (df["close"] > 0).all()
 
 
 def test_closed_day_serving_previous_session_is_holiday(tmp_path, monkeypatch):
@@ -111,7 +126,21 @@ def test_closed_day_serving_previous_session_is_holiday(tmp_path, monkeypatch):
     f = tmp_path / "sec_bhavdata_full_20220126.csv"
     f.write_text("\n".join([HEADER, bar_row("RELIANCE", date(2022, 1, 25), 1, 2, 1, 2)]))
     p = NSEBhavcopyProvider(raw_dir=tmp_path, pause_seconds=0)
+    monkeypatch.setattr(p, "_download", lambda url, path: path.exists())
     assert p.fetch_day(date(2022, 1, 26)) is None
+
+
+def test_stale_first_layout_falls_back_to_historical(tmp_path):
+    """On some real sessions the newer file holds an old date but the historical zip is right."""
+    import zipfile
+    (tmp_path / "sec_bhavdata_full_20211104.csv").write_text(
+        "\n".join([HEADER, bar_row("RELIANCE", date(2021, 11, 3), 1, 2, 1, 2)]))
+    csv = ("SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,TOTTRDQTY,TIMESTAMP\n"
+           "RELIANCE,EQ,10,12,9,11,100,04-NOV-2021\n")
+    with zipfile.ZipFile(tmp_path / "cm_hist_20211104.csv.zip", "w") as zf:
+        zf.writestr("cm04NOV2021bhav.csv", csv)
+    bars = NSEBhavcopyProvider(raw_dir=tmp_path, pause_seconds=0).fetch_day(date(2021, 11, 4))
+    assert bars.loc["RELIANCE", "close"] == 11
 
 
 def test_parse_historical_layout(tmp_path):
