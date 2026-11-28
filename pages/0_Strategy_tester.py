@@ -19,8 +19,8 @@ from niftyta.reporting.lw_chart import price_chart  # noqa: E402
 from niftyta.strategies import all_strategies  # noqa: E402
 
 ONE, ALL = "One stock", "All stocks (shared account)"
-INDEX = "Nifty 500"
-INDICES = ("Nifty 50", "Nifty Bank", INDEX)     # can be tested like a stock
+INDICES = ("Nifty 50", "Nifty Bank", "Nifty 500")     # can be tested like a stock
+FUTURES = "NSE:NIFTY1!"                         # continuous front-month future; listed first, so it is the default
 
 st.set_page_config(page_title="Strategy tester", layout="wide")
 
@@ -49,10 +49,23 @@ def index_bars() -> dict[str, pd.DataFrame]:
     return {n: found[n] for n in INDICES if n in found}
 
 
+@st.cache_data(show_spinner=False)
+def futures_bars() -> dict[str, pd.DataFrame]:
+    df = query("SELECT date, open, high, low, close, close AS adj_close, volume FROM nse_futures_daily "
+               "WHERE symbol = ? ORDER BY date", [FUTURES])
+    df["date"] = pd.to_datetime(df["date"])
+    return {FUTURES: df.set_index("date")} if len(df) else {}
+
+
+def other_bars() -> dict[str, pd.DataFrame]:
+    """Everything testable that is not a share: the future first, then the indices."""
+    return {**futures_bars(), **index_bars()}
+
+
 @st.cache_data(show_spinner="Calculating signals...", max_entries=6)
 def frames_for(key: str, params: tuple, symbols: tuple) -> dict[str, pd.DataFrame]:
     s = all_strategies()[key]
-    bars = {**prices(), **index_bars()}
+    bars = {**prices(), **other_bars()}
     return {x: tester.prepare(s, bars[x], dict(params)) for x in symbols}
 
 
@@ -67,16 +80,14 @@ def every_stock(key: str, params: tuple, cfg: PortfolioConfig, start, end) -> pd
             continue
         a = max(ready, start)
         _, m = tester.run({symbol: f}, cfg, a, end, strategy, dict(params))
-        hold = tester.buy_and_hold(f["close"].loc[a:end])
-        rows.append({"symbol": symbol, "strategy": m["cagr"], "buy and hold": hold["cagr"],
-                     "strategy drawdown": m["max_drawdown"], "buy and hold drawdown": hold["max_drawdown"],
-                     "trades": m["trades"]})
+        rows.append({"symbol": symbol, "total_return": m["total_return"], "cagr": m["cagr"],
+                     "max_drawdown": m["max_drawdown"], "win_rate": m["win_rate"], "trades": m["trades"]})
     return pd.DataFrame(rows)
 
 
 def percent(df: pd.DataFrame):
     cols = [c for c in df.select_dtypes("number").columns
-            if any(k in c for k in ("cagr", "drawdown", "return", "win_rate", "strategy", "buy and hold"))]
+            if any(k in c for k in ("cagr", "drawdown", "return", "win_rate"))]
     return df.style.format({c: "{:.1%}" for c in cols}, na_rep="-", precision=2)
 
 
@@ -88,8 +99,8 @@ strategy = strategies[key]
 own = strategy.execute is not None     # has its own entry orders and exits
 mode = side.radio("Test on", [ONE] if own else [ONE, ALL])
 names = list(prices())                              # stocks only: used for the all-stock tests
-symbol = side.selectbox("Stock or index", list(index_bars()) + names) if mode == ONE else None
-is_index = symbol in INDICES
+symbol = side.selectbox("Future, index or stock", list(other_bars()) + names) if mode == ONE else None
+is_index, is_future = symbol in INDICES, symbol == FUTURES
 
 side.subheader("Strategy settings")
 params = {}
@@ -107,8 +118,8 @@ params_key = tuple(sorted(params.items()))
 side.subheader("Trade management")
 one = mode == ONE
 k = "one" if one else "all"
-cash = side.number_input("Capital (INR)", 10_000, 100_000_000, 1_000_000 if is_index else 100_000, step=10_000,
-                         key=f"cash_{is_index}")
+cash = side.number_input("Capital (INR)", 10_000, 100_000_000, 1_000_000 if is_index or is_future else 100_000, step=10_000,
+                         key=f"cash_{is_index or is_future}")
 if own:
     side.caption("This strategy sets its own entry, stoploss and exit, and invests all capital in each trade.")
     cfg = PortfolioConfig(max_positions=1, max_position_pct=1.0, initial_cash=float(cash))
@@ -141,6 +152,11 @@ if is_index:
     st.info(f"{symbol} is an index and cannot be bought directly. This test trades whole units at the index level "
             "with share delivery costs. Real trades would use an ETF or futures, so results would differ. "
             f"Index data runs to {last_date:%d %b %Y}.")
+if is_future:
+    st.info(f"{symbol}: this shows how the signals behave on the futures price, not real futures profit or loss. It "
+            "buys whole units with cash, with share delivery costs: no lot size, margin, futures charges or "
+            "rollover, and the monthly contracts are joined without adjustment. "
+            f"Data runs to {last_date:%d %b %Y}.")
 if ready is None:
     st.warning("Not enough history for these settings.")
     st.stop()
@@ -159,24 +175,17 @@ if out is None:
     st.stop()
 result, m = out
 
-benchmarks = {INDEX: index_bars()[INDEX]["close"]} if symbol != INDEX else {}
-if one:
-    benchmarks = {"buy and hold": frames[symbol]["close"], **benchmarks}
-bench = {n: tester.buy_and_hold(s.loc[start:end]) for n, s in benchmarks.items() if len(s.loc[start:end]) > 1}
-
 # ---------- 1. summary ----------
 st.header("1. Summary")
-cols = st.columns(5)
-cols[0].metric("Yearly return", f"{m['cagr']:.1%}")
-cols[1].metric("Worst fall", f"{m['max_drawdown']:.1%}")
-cols[2].metric("Win rate", "-" if pd.isna(m["win_rate"]) else f"{m['win_rate']:.1%}")
-cols[3].metric("Profit factor", "-" if pd.isna(m["profit_factor"]) else f"{m['profit_factor']:.2f}")
-cols[4].metric("Closed trades", f"{m['trades']}")
-compare = pd.DataFrame([{"": "Strategy", **{x: m[x] for x in ("total_return", "cagr", "max_drawdown")}},
-                        *({"": n, **b} for n, b in bench.items())])
-st.dataframe(percent(compare), width="stretch", hide_index=True)
-st.caption(f"Average share of the account invested: {m['exposure']:.0%}. Benchmarks are fully invested with no "
-           "costs; the index excludes dividends.")
+cols = st.columns(6)
+cols[0].metric("Total profit", f"{m['total_return']:+.1%}")
+cols[1].metric("Yearly return", f"{m['cagr']:+.1%}")
+cols[2].metric("Worst fall", f"{m['max_drawdown']:.1%}")
+cols[3].metric("Win rate", "-" if pd.isna(m["win_rate"]) else f"{m['win_rate']:.1%}")
+cols[4].metric("Profit factor", "-" if pd.isna(m["profit_factor"]) else f"{m['profit_factor']:.2f}")
+cols[5].metric("Closed trades", f"{m['trades']}")
+st.caption(f"{start:%d %b %Y} to {end:%d %b %Y}: INR {cash:,.0f} became INR {result.equity.iloc[-1]:,.0f}, after "
+           f"costs. Average share of the account invested: {m['exposure']:.0%}.")
 
 # ---------- 2. price chart ----------
 st.header("2. Price chart")
@@ -197,7 +206,8 @@ else:
     levels = own or cfg.stop != "none"
     if strategy.timeframes:
         st.caption("One chart per timeframe. Hover on any chart to mark the same time on all of them. Month and week "
-                   "show completed candles; the daily legend shows the values the rules used that day.")
+                   "include the unfinished candle (fainter), as TradingView does. The rules use completed candles only; "
+                   "the daily header shows the values they used that day.")
         mtf_chart.show(strategy, frames[symbol].loc[:end], params, t, open_trade, levels, symbol)
     else:
         price_chart(f, f, t, open_trade, title=symbol, visible_years=2, levels=levels, height=720,
@@ -206,17 +216,12 @@ else:
 
 # ---------- 3. equity ----------
 st.header("3. Account value and drawdown")
-curves = {"Strategy": result.equity}
-for n, s in benchmarks.items():
-    s = s.reindex(result.equity.index, method="ffill").dropna()
-    if len(s) > 1:
-        curves[n] = s
-st.plotly_chart(equity_figure(curves), width="stretch")
+st.plotly_chart(equity_figure({"Strategy": result.equity}), width="stretch")
 
 # ---------- 4. checks ----------
 st.header("4. Honesty checks")
-periods = tester.by_period(frames, cfg, benchmarks, start, end, strategy, params)
-for text in tester.warnings(m, periods, bench):
+periods = tester.by_period(frames, cfg, {}, start, end, strategy, params)
+for text in tester.warnings(m, periods, {}):
     st.warning(text)
 st.dataframe(percent(periods), width="stretch", hide_index=True)
 st.caption("Each period starts fresh. Trying many settings and keeping the best overfits past data. All-stock tests "
@@ -248,14 +253,11 @@ if st.toggle("Run on every stock (takes a while)"):
     if table.empty:
         st.info("No stock has enough history in this range.")
     else:
-        fig = px.scatter(table, x="buy and hold", y="strategy", hover_name="symbol", opacity=.65,
-                         hover_data=["trades"])
-        lo, hi = table[["buy and hold", "strategy"]].min().min(), table[["buy and hold", "strategy"]].max().max()
-        fig.add_shape(type="line", x0=lo, y0=lo, x1=hi, y1=hi, line=dict(dash="dot", color="#777"))
-        fig.update_layout(height=600, xaxis_tickformat=".0%", yaxis_tickformat=".0%",
-                          xaxis_title="Buy and hold: yearly return", yaxis_title="Strategy: yearly return")
+        profit = table["total_return"]
+        st.write(f"{len(table)} stocks. Median total profit {profit.median():+.1%}, median yearly return "
+                 f"{table['cagr'].median():+.1%}. {(profit > 0).mean():.0%} of stocks made a profit.")
+        fig = px.histogram(table.assign(profit=profit * 100), x="profit", nbins=60,
+                           labels={"profit": "Total profit %"})
+        fig.update_layout(height=450, yaxis_title="Stocks")
         st.plotly_chart(fig, width="stretch")
-        st.write(f"{len(table)} stocks. Median yearly return: strategy {table['strategy'].median():.1%}, buy and hold "
-                 f"{table['buy and hold'].median():.1%}. The strategy was higher in "
-                 f"{(table['strategy'] > table['buy and hold']).mean():.0%} of stocks.")
         st.dataframe(percent(table), width="stretch", hide_index=True)

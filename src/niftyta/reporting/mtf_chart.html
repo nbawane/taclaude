@@ -54,7 +54,7 @@ function make(el, showTime) {
     layout: {background: {color: "#fff"}, textColor: "#222"},
     grid: {vertLines: {color: "rgba(0,0,0,0.06)"}, horzLines: {color: "rgba(0,0,0,0.06)"}},
     crosshair: {mode: LC.CrosshairMode.Normal},
-    rightPriceScale: {minimumWidth: 72},
+    rightPriceScale: {minimumWidth: 90},   // same width everywhere, so price and RSI bars line up
     timeScale: {visible: showTime}
   });
 }
@@ -128,7 +128,9 @@ function legend(col, t) {
   let a = "<b>" + DATA.title + " " + col.p.title + "</b> &nbsp;";
   const bar = col.bars.get(t);
   if (!bar) { col.legend.innerHTML = a + "no completed candle for this date"; return; }
-  a += (col.p.rank === 2 ? "month to " : col.p.rank === 1 ? "week to " : "") + day(t) + " &nbsp;O " + bar.open +
+  const f = col.p.forming && col.p.forming.time === t ? col.p.forming : null;
+  a += (f ? (col.p.rank === 2 ? "month" : "week") + " still forming, data to " + day(f.asof)
+          : (col.p.rank === 2 ? "month to " : col.p.rank === 1 ? "week to " : "") + day(t)) + " &nbsp;O " + bar.open +
     " H " + bar.high + " L " + bar.low + " C " + bar.close;
   let b = col.overlays.concat(col.panel).map(x => span(x.o.label + " " + (x.v.has(t) ? x.v.get(t) : "-"), x.o.color));
   b = b.concat(col.used.map(x => span(x.label + " " + (x.v.has(t) ? x.v.get(t) : "-"), "#555")));

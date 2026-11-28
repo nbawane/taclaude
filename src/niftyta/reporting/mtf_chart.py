@@ -48,8 +48,17 @@ def _pane(rule: str, title: str, bars: pd.DataFrame, overlays, panel, months: in
 def chart_data(strategy: Strategy, frame: pd.DataFrame, params: dict, trades: pd.DataFrame, open_trade=None,
                levels: bool = False) -> list[dict]:
     """frame: a prepared daily frame (tester.prepare). Returns the panes, longest timeframe first, daily last."""
-    panes = [_pane(tf.rule, tf.title, tester.timeframe_view(frame, tf, params), tf.overlays, tf.panel,
-                   120 if tf.rule == "1M" else 36, strategy.rsi_panel) for tf in strategy.timeframes]
+    panes = []
+    for tf in strategy.timeframes:
+        view = tester.timeframe_view(frame, tf, params, include_forming=True)
+        pane = _pane(tf.rule, tf.title, view, tf.overlays, tf.panel, 120 if tf.rule == "1M" else 36,
+                     strategy.rsi_panel)
+        if len(view) and view["forming"].iloc[-1]:      # fainter, and labelled in the legend
+            up = view["close"].iloc[-1] >= view["open"].iloc[-1]
+            faint = "rgba(38,166,154,0.45)" if up else "rgba(239,83,80,0.45)"
+            pane["candles"][-1].update(color=faint, wickColor=faint)
+            pane["forming"] = {"time": pane["candles"][-1]["time"], "asof": _seconds(frame.index.max())}
+        panes.append(pane)
     daily = _pane("1D", "Daily", frame, strategy.overlays, strategy.panel, 12, strategy.rsi_panel)
     daily["markers"] = [{"time": _seconds(m["time"]), "position": m["position"] + "Bar",
                          "shape": m["shape"].replace("_u", "U").replace("_d", "D"), "color": m["color"],

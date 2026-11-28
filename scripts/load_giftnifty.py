@@ -22,10 +22,10 @@ from niftyta.data.store import PriceStore  # noqa: E402
 SRC = ROOT / "data" / "raw" / "tradingview_giftnifty"
 
 
-def read_bars(path: Path) -> pd.DataFrame:
+def read_bars(path: Path, exchange: str = "NSEIX") -> pd.DataFrame:
     b = pd.DataFrame(json.loads(path.read_text())["bars"])
     ist = pd.to_datetime(b["t"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-    df = pd.DataFrame({"symbol": "NSEIX:" + path.name.replace("_1D.json", "!"), "date": ist.dt.date,
+    df = pd.DataFrame({"symbol": exchange + ":" + path.name.replace("_1D.json", "!"), "date": ist.dt.date,
                        "open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"], "volume": b["v"]})
     return df[df["date"] < pd.Timestamp.now("Asia/Kolkata").date()]
 

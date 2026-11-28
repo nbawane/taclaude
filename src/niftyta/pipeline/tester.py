@@ -6,6 +6,7 @@ import talib
 
 from ..backtest.gfs import closed_bars
 from ..backtest.portfolio import PortfolioConfig
+from ..data.timeframes import resample_ohlcv
 from ..strategies import Strategy
 from .mtf_sma_portfolio import Variant, run_variant, summarize
 from .mtf_sma_run import adjusted
@@ -34,11 +35,13 @@ def prepare(strategy: Strategy, raw: pd.DataFrame, params: dict, swing_bars: int
     return out
 
 
-def timeframe_view(frame: pd.DataFrame, timeframe, params: dict) -> pd.DataFrame:
-    """Completed weekly or monthly candles from a prepared daily frame, with that timeframe's lines."""
+def timeframe_view(frame: pd.DataFrame, timeframe, params: dict, include_forming: bool = False) -> pd.DataFrame:
+    """Weekly or monthly candles from a prepared daily frame, with that timeframe's lines. The rules use completed
+    candles only. include_forming adds the unfinished candle (column `forming`) for display, as TradingView does."""
     daily = frame[["open", "high", "low", "close", "volume"]].assign(adj_close=frame["close"], deliv_qty=float("nan"))
-    bars = closed_bars(daily, timeframe.rule)
-    return bars[["open", "high", "low", "close", "volume"]].join(timeframe.values(bars, params))
+    bars = resample_ohlcv(daily, timeframe.rule) if include_forming else closed_bars(daily, timeframe.rule)
+    out = bars[["open", "high", "low", "close", "volume"]].join(timeframe.values(bars, params))
+    return out.assign(forming=bars["partial"]) if include_forming else out
 
 
 def first_ready(frames: dict[str, pd.DataFrame]):
@@ -85,8 +88,8 @@ def by_period(frames: dict, cfg: PortfolioConfig, benchmarks: dict[str, pd.Serie
         if out is None:
             continue
         m = out[1]
-        row = {"period": name, "trades": m["trades"], "cagr": m["cagr"], "max_drawdown": m["max_drawdown"],
-               "win_rate": m["win_rate"]}
+        row = {"period": name, "trades": m["trades"], "total_return": m["total_return"], "cagr": m["cagr"],
+               "max_drawdown": m["max_drawdown"], "win_rate": m["win_rate"]}
         for label, series in benchmarks.items():
             s = series.loc[a:b].dropna()
             if len(s) > 1:

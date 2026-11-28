@@ -110,3 +110,17 @@ def test_only_rsi_charts_carry_the_rsi_guides():
         assert [p["rsi"] for p in panes] == expected
     assert STRATEGIES["rsi"].rsi_panel and not STRATEGIES["ema_cross"].rsi_panel
     assert sorted(g["level"] for g in (rsi_guides.BAND, *rsi_guides.LINES)) == [20, 40, 60, 80]
+
+
+def test_chart_shows_the_forming_month_without_changing_completed_values():
+    s = STRATEGIES["gfs"]
+    f = tester.prepare(s, raw(n=1500), s.defaults())
+    f = f.loc[:f.index[(f.index.day > 10) & (f.index.day < 20)][-1]]     # data stops mid-month
+    month = s.timeframes[0]
+    shown = tester.timeframe_view(f, month, s.defaults(), include_forming=True)
+    done = tester.timeframe_view(f, month, s.defaults())
+    assert shown["forming"].iloc[-1] and not shown["forming"].iloc[:-1].any()
+    assert shown["close"].iloc[-1] == f["close"].iloc[-1] and len(shown) == len(done) + 1
+    pd.testing.assert_series_equal(shown[month.column].iloc[:-1], done[month.column], check_freq=False)
+    pane = mtf_chart.chart_data(s, f, s.defaults(), pd.DataFrame())[0]
+    assert pane["forming"]["time"] == pane["candles"][-1]["time"] and "color" in pane["candles"][-1]
