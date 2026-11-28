@@ -4,9 +4,9 @@ from __future__ import annotations
 import importlib
 import pkgutil
 
-from .base import Line, Param, Strategy
+from .base import Line, Param, Strategy, Timeframe
 
-__all__ = ["Line", "Param", "Strategy", "all_strategies"]
+__all__ = ["Line", "Param", "Strategy", "Timeframe", "all_strategies"]
 
 
 def all_strategies() -> dict[str, Strategy]:

@@ -1,7 +1,8 @@
 """TradingView-style charts for one stock, in one window.
 
 Default: three panels side by side, daily | weekly | monthly. Each panel has candlesticks,
-Bollinger Bands (20, 2σ), SMA 20 and SMA 50 on top, and RSI(14) in a pane below.
+Bollinger Bands (20, 2σ), SMA 20 and SMA 50 on top, and RSI(14) in a pane below
+(40 and 60 lines with a faint band, dotted 20 and 80).
 
 Reads stored daily bars from data/niftyta.duckdb (read-only), builds weekly/monthly bars with the
 project's resampler, and takes all indicator periods from config/indicators.yaml.
@@ -28,6 +29,7 @@ import pandas as pd  # noqa: E402
 from niftyta.data.provider import COLUMNS  # noqa: E402
 from niftyta.data.store import DEFAULT_DB  # noqa: E402
 from niftyta.data.timeframes import resample_ohlcv  # noqa: E402
+from niftyta.reporting.lw_chart import add_rsi_guides  # noqa: E402
 from niftyta.indicators.core import compute_indicators, load_params  # noqa: E402
 
 TIMEFRAMES = {"1D": "Daily", "1W": "Weekly", "1M": "Monthly"}
@@ -89,11 +91,10 @@ def fill_panel(pane, full: pd.DataFrame, tf: str, p: dict, rsi_sync: str | bool)
 
     rsi_name = f"RSI {p['rsi']['period']}"
     rsi_pane = pane.create_subchart(position="bottom", width=1, height=0.3, sync=rsi_sync)
+    add_rsi_guides(rsi_pane, pd.DatetimeIndex(full[rsi_col].dropna().index))
     rsi_line = rsi_pane.create_line(name=rsi_name, color="#9c27b0", width=1,
                                     price_label=True, price_line=False)
     rsi_line.set(to_chart_frame(full, [rsi_col], {rsi_col: rsi_name}))
-    rsi_pane.horizontal_line(70, color="rgba(239,83,80,0.7)", style="dashed", width=1)
-    rsi_pane.horizontal_line(30, color="rgba(38,166,154,0.7)", style="dashed", width=1)
 
 
 def main() -> None:

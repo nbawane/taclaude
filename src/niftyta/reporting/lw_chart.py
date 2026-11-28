@@ -1,9 +1,13 @@
 """Price chart using TradingView's open-source Lightweight Charts (through lightweight-charts-python)."""
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import streamlit as st
 from lightweight_charts.widgets import StreamlitChart
+
+from . import rsi_guides
 
 SMA_LINES = (("sma_d", "Daily SMA", "#2962ff"), ("sma_w", "Weekly SMA", "#8e44ad"),
              ("sma_m", "Monthly SMA", "#f57c00"))
@@ -16,6 +20,14 @@ def chart_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = df.rename_axis("time").reset_index()
     out["time"] = out["time"].astype("datetime64[ns]")
     return out
+
+
+def add_rsi_guides(pane, dates: pd.DatetimeIndex) -> None:
+    """Draw the standard RSI reference lines on a lightweight-charts-python pane. Call before the RSI line."""
+    times = [int(t.timestamp()) for t in dates.normalize()]
+    for method, guide in [("addBaselineSeries", rsi_guides.BAND)] + [("addLineSeries", g) for g in rsi_guides.LINES]:
+        data = [{"time": t, "value": guide["level"]} for t in times]
+        pane.run_script(f"{pane.id}.chart.{method}({json.dumps(guide['options'])}).setData({json.dumps(data)})")
 
 
 class _Chart(StreamlitChart):
@@ -37,7 +49,7 @@ def trade_markers(trades: pd.DataFrame, open_trade=None) -> list[dict]:
 
 def price_chart(bars: pd.DataFrame, smas: pd.DataFrame, trades: pd.DataFrame, open_trade=None,
                 title: str = "", height: int = 680, visible_years: int = 1,
-                levels: bool = False, overlays=SMA_LINES, panel=()) -> StreamlitChart:
+                levels: bool = False, overlays=SMA_LINES, panel=(), rsi: bool = False) -> StreamlitChart:
     """Candles, volume, indicator lines (`overlays` on the price, `panel` in a pane below; both are
     (column of `smas`, label, color)) and trade markers. Call .load() to show it in Streamlit.
     levels=True also draws each trade's initial stop and target (columns `stop`, `target`)."""
@@ -62,6 +74,8 @@ def price_chart(bars: pd.DataFrame, smas: pd.DataFrame, trades: pd.DataFrame, op
         lower.layout(background_color="#ffffff", text_color="#222222", font_size=12)
         lower.grid(color="rgba(0,0,0,0.06)")
         lower.legend(visible=True, ohlc=False, percent=False, lines=True, color="#222222", font_size=12)
+        if rsi:
+            add_rsi_guides(lower, smas.index)
         add_lines(lower, panel)
     if levels:
         for t in trades.to_dict("records"):

@@ -4,9 +4,10 @@ from __future__ import annotations
 import pandas as pd
 import talib
 
+from ..backtest.gfs import closed_bars
 from ..backtest.portfolio import PortfolioConfig
 from ..strategies import Strategy
-from .mtf_sma_portfolio import Variant, run_variant
+from .mtf_sma_portfolio import Variant, run_variant, summarize
 from .mtf_sma_run import adjusted
 
 PERIODS = (("2018 to 2022", None, "2022-12-31"), ("2023 to 2024", "2023-01-01", "2024-12-31"),
@@ -20,7 +21,7 @@ def prepare(strategy: Strategy, raw: pd.DataFrame, params: dict, swing_bars: int
     s = strategy.compute(bars, params)
     out = bars[["open", "high", "low", "close", "volume"]].join(s.drop(columns=["entry", "exit", "exit_weekly"],
                                                                        errors="ignore"))
-    lines = [x.column for x in strategy.overlays + strategy.panel]
+    lines = [x.column for x in strategy.overlays + strategy.panel + strategy.timeframes]
     ready = out[lines].notna().all(axis=1) if lines else pd.Series(True, index=out.index)
     out["ready"] = ready
     out["entry"] = pd.Series(s["entry"], index=bars.index).astype(bool) & ready
@@ -33,16 +34,33 @@ def prepare(strategy: Strategy, raw: pd.DataFrame, params: dict, swing_bars: int
     return out
 
 
+def timeframe_view(frame: pd.DataFrame, timeframe, params: dict) -> pd.DataFrame:
+    """Completed weekly or monthly candles from a prepared daily frame, with that timeframe's lines."""
+    daily = frame[["open", "high", "low", "close", "volume"]].assign(adj_close=frame["close"], deliv_qty=float("nan"))
+    bars = closed_bars(daily, timeframe.rule)
+    return bars[["open", "high", "low", "close", "volume"]].join(timeframe.values(bars, params))
+
+
 def first_ready(frames: dict[str, pd.DataFrame]):
     dates = [f.index[f["ready"]][0] for f in frames.values() if f["ready"].any()]
     return min(dates) if dates else None
 
 
-def run(frames: dict[str, pd.DataFrame], cfg: PortfolioConfig, start=None, end=None):
-    """(Result, metrics), or None if the window has too few bars."""
+def run(frames: dict[str, pd.DataFrame], cfg: PortfolioConfig, start=None, end=None,
+        strategy: Strategy | None = None, params: dict | None = None):
+    """(Result, metrics), or None if the window has too few bars. A strategy with its own `execute`
+    trades one stock at a time and uses only the capital from `cfg`."""
     if not any(len(f.loc[start:end]) > 1 for f in frames.values()):
         return None
-    return run_variant(frames, Variant(cfg), start, end)
+    if strategy is None or strategy.execute is None:
+        return run_variant(frames, Variant(cfg), start, end)
+    if len(frames) != 1:
+        raise ValueError(f"{strategy.name} can only be tested one stock at a time")
+    (symbol, frame), = frames.items()
+    res = strategy.execute(frame.loc[start:end], params, cfg.initial_cash)
+    if len(res.trades):
+        res.trades.insert(0, "symbol", symbol)
+    return res, summarize(res, cfg.initial_cash)
 
 
 def buy_and_hold(close: pd.Series) -> dict:
@@ -54,7 +72,8 @@ def buy_and_hold(close: pd.Series) -> dict:
             "max_drawdown": float((close / close.cummax() - 1).min())}
 
 
-def by_period(frames: dict, cfg: PortfolioConfig, benchmarks: dict[str, pd.Series], start, end) -> pd.DataFrame:
+def by_period(frames: dict, cfg: PortfolioConfig, benchmarks: dict[str, pd.Series], start, end,
+              strategy: Strategy | None = None, params: dict | None = None) -> pd.DataFrame:
     """Each period is a fresh run, limited to the chosen date range."""
     rows = []
     for name, a, b in PERIODS:
@@ -62,7 +81,7 @@ def by_period(frames: dict, cfg: PortfolioConfig, benchmarks: dict[str, pd.Serie
         b = min(pd.Timestamp(b or end), pd.Timestamp(end))
         if a >= b:
             continue
-        out = run(frames, cfg, a, b)
+        out = run(frames, cfg, a, b, strategy, params)
         if out is None:
             continue
         m = out[1]

@@ -11,9 +11,10 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from niftyta.data.store import DEFAULT_DB  # noqa: E402
-from niftyta.pipeline.mtf_sma_portfolio import prepare  # noqa: E402
+from niftyta.pipeline import tester  # noqa: E402
 from niftyta.reporting.charts import equity_figure  # noqa: E402
-from niftyta.reporting.lw_chart import price_chart  # noqa: E402
+from niftyta.reporting import mtf_chart  # noqa: E402
+from niftyta.strategies import all_strategies  # noqa: E402
 
 OUT = ROOT / "reports" / "mtf_sma_opt"
 st.set_page_config(page_title="SMA portfolio", layout="wide")
@@ -72,9 +73,11 @@ t = trades[trades.symbol == symbol].sort_values("entry_date")
 with duckdb.connect(str(DEFAULT_DB), read_only=True) as conn:
     raw = conn.execute("SELECT * FROM yfinance_prices_daily WHERE symbol = ? ORDER BY date", [symbol]).df()
 raw["date"] = pd.to_datetime(raw["date"])
-bars = prepare(raw.set_index("date").dropna(subset=["open", "high", "low", "close", "adj_close"]))
-st.caption("Dashed red = stop at entry; dashed green = target, if the chosen exit has one. Trailing stops move "
-           "after entry and are not drawn. Prices are adjusted to the latest data.")
-shown = bars.loc[t.entry_date.min() - pd.DateOffset(months=6):]
-price_chart(shown, shown, t, title=symbol, visible_years=10, levels=True).load()
+sma = all_strategies()["sma_mtf"]
+frame = tester.prepare(sma, raw.set_index("date").dropna(subset=["open", "high", "low", "close", "adj_close"]),
+                       sma.defaults())
+st.caption("One chart per timeframe, synced on hover. Dashed red = stop at entry; dashed green = target, if the "
+           "chosen exit has one. Prices are adjusted to the latest data.")
+mtf_chart.show(sma, frame.loc[t.entry_date.min() - pd.DateOffset(months=6):], sma.defaults(), t, levels=True,
+               title=symbol)
 st.dataframe(percent(t.drop(columns="symbol")), width="stretch", hide_index=True)

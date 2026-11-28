@@ -57,13 +57,17 @@ def run_variant(data: dict[str, pd.DataFrame], v: Variant, start=None, end=None,
             raise ValueError(f"unknown filters {unknown}")
         data = {s: df.assign(entry=df["entry"] & df[list(v.filters)].all(axis=1)) for s, df in data.items()}
     res = run_portfolio(data, v.cfg, costs, start, end)
+    return res, summarize(res, v.cfg.initial_cash)
+
+
+def summarize(res, initial_cash: float) -> dict:
+    """Metrics using calendar years, measured from the starting cash so first-day costs count."""
     m = performance(res.equity, res.trades, res.exposure)
     years = (res.equity.index[-1] - res.equity.index[0]).days / 365.25
-    # calendar years, and measured from the starting cash so first-day costs count
-    m["total_return"] = res.equity.iloc[-1] / v.cfg.initial_cash - 1
+    m["total_return"] = res.equity.iloc[-1] / initial_cash - 1
     m["cagr"] = (1 + m["total_return"]) ** (1 / years) - 1
     m["calmar"] = m["cagr"] / abs(m["max_drawdown"]) if m["max_drawdown"] < 0 else float("nan")
     if len(res.trades):
         r = res.trades["return"]
         m["avg_win"], m["avg_loss"] = r[r > 0].mean(), r[r <= 0].mean()
-    return res, m
+    return m

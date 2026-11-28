@@ -21,6 +21,6 @@ STRATEGY = Strategy(
     params=(Param("period", "RSI length", _I["period"], 2, 100),
             Param("buy_level", "Buy level", _S["entry_cross_above"], 1, 99),
             Param("sell_level", "Sell level", _S["exit_cross_below"], 1, 99)),
-    compute=compute,
+    compute=compute, rsi_panel=True,
     panel=(Line("rsi", "RSI", PURPLE), Line("buy_level", "Buy level", "#008300"),
            Line("sell_level", "Sell level", "#c62828")))

@@ -12,9 +12,11 @@ import streamlit as st  # noqa: E402
 import yaml  # noqa: E402
 
 from niftyta.data.store import DEFAULT_DB  # noqa: E402
+from niftyta.pipeline import tester  # noqa: E402
 from niftyta.pipeline.mtf_sma_run import DAILY_ONLY, HOLD, STRAT, adjusted, run_symbol  # noqa: E402
 from niftyta.reporting.charts import equity_figure  # noqa: E402
-from niftyta.reporting.lw_chart import price_chart  # noqa: E402
+from niftyta.reporting import mtf_chart  # noqa: E402
+from niftyta.strategies import all_strategies  # noqa: E402
 
 st.set_page_config(page_title="MTF SMA strategy", layout="wide")
 st.title("Monthly + weekly + daily SMA strategy")
@@ -34,10 +36,14 @@ def symbols() -> list[str]:
 
 
 @st.cache_data(show_spinner=False)
-def bars(symbol: str) -> pd.DataFrame:
+def raw(symbol: str) -> pd.DataFrame:
     df = query("SELECT * FROM yfinance_prices_daily WHERE symbol = ? ORDER BY date", [symbol])
     df["date"] = pd.to_datetime(df["date"])
-    return adjusted(df.set_index("date").dropna(subset=["open", "high", "low", "close", "adj_close"]))
+    return df.set_index("date").dropna(subset=["open", "high", "low", "close", "adj_close"])
+
+
+def bars(symbol: str) -> pd.DataFrame:
+    return adjusted(raw(symbol))
 
 
 cfg = yaml.safe_load(open(ROOT / "config" / "strategies.yaml"))["mtf_sma"]
@@ -66,10 +72,12 @@ with one:
         cols[2].metric("Closed trades", f"{len(t)}")
         cols[3].metric("Win rate", "-" if t.empty else f"{(t['return'] > 0).mean():.1%}")
         st.subheader(f"{symbol}: price and trades")
-        st.caption("Scroll to zoom, drag to move back in time, drag the price scale to stretch it. "
-                   "Green arrow = buy; red arrow = sell, with the trade's return. Blue = daily SMA, purple = weekly, "
-                   "orange = monthly.")
-        price_chart(d, smas, t, open_entries.get(STRAT), title=symbol).load()
+        st.caption("One chart per timeframe; hover on any of them to mark the same time on all. Green arrow = buy, "
+                   "red arrow = sell with the trade's return.")
+        sma = all_strategies()["sma_mtf"]
+        settings = {"period": int(period), "confirm_days": int(confirm)}
+        mtf_chart.show(sma, tester.prepare(sma, raw(symbol), settings).loc[d.index[0]:], settings, t,
+                       open_entries.get(STRAT), title=symbol)
         st.subheader("Account value and drawdown")
         st.plotly_chart(equity_figure(equity), width="stretch")
         st.subheader("Results by period")

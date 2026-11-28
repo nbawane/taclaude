@@ -1,0 +1,171 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+body{margin:0;background:#fff;color:#222;font:12px -apple-system,system-ui,sans-serif}
+#top .col{height:480px;margin-bottom:10px}
+#bottom{height:640px}
+.col{box-sizing:border-box;display:flex;flex-direction:column;border:1px solid #e0e3eb}
+.legend{padding:4px 8px;height:34px;overflow:hidden;line-height:17px}
+/* horizontal: month, week, day side by side */
+body.horizontal #charts{display:flex;gap:10px;height:720px}
+body.horizontal #top{display:contents}
+body.horizontal #top .col{flex:1;min-width:0;height:100%;margin:0}
+body.horizontal #bottom{flex:1;min-width:0;height:100%}
+body.horizontal .legend{height:68px}
+/* full screen: all charts share the height of the screen */
+#bar{height:36px;display:flex;justify-content:flex-end;align-items:center;gap:10px}
+#bar button{font:inherit;padding:5px 12px;border:1px solid #c9cdd6;border-radius:6px;background:#fff;cursor:pointer}
+#bar button:hover{background:#f0f3fa}
+body.full{display:flex;flex-direction:column;height:100vh;overflow:hidden;box-sizing:border-box;padding:0 8px 8px}
+body.full #charts{flex:1;min-height:0;height:auto}
+body.full.vertical #charts{display:flex;flex-direction:column;gap:6px}
+body.full.vertical #top{display:contents}
+body.full.vertical #top .col{flex:1;min-height:0;height:auto;margin:0}
+body.full.vertical #bottom{flex:1.5;min-height:0;height:auto}
+.price{flex:7;min-height:0}.sub{flex:3;min-height:0;border-top:1px solid #e0e3eb}
+body.full.vertical .sub{flex:6}                 /* short charts: give RSI enough room to read */
+</style>
+<script>/*LIBRARY*/</script></head>
+<body>
+<div id="bar"><span id="note"></span><button id="full" type="button">&#x26F6; Full screen</button></div>
+<div id="charts"><div id="top"></div><div id="bottom"></div></div>
+<script>
+const DATA = "/*DATA*/";
+const LC = LightweightCharts;
+const columns = [];
+document.body.classList.add(DATA.layout);
+
+const button = document.getElementById("full");
+button.addEventListener("click", () => {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  const failed = () => document.getElementById("note").textContent = "This browser did not allow full screen.";
+  if (!document.documentElement.requestFullscreen) failed();
+  else document.documentElement.requestFullscreen().catch(failed);
+});
+document.addEventListener("fullscreenchange", () => {
+  const on = !!document.fullscreenElement;
+  document.body.classList.toggle("full", on);
+  button.textContent = on ? "\u2715 Exit full screen (Esc)" : "\u26F6 Full screen";
+});
+
+function make(el, showTime) {
+  return LC.createChart(el, {
+    autoSize: true,
+    layout: {background: {color: "#fff"}, textColor: "#222"},
+    grid: {vertLines: {color: "rgba(0,0,0,0.06)"}, horzLines: {color: "rgba(0,0,0,0.06)"}},
+    crosshair: {mode: LC.CrosshairMode.Normal},
+    rightPriceScale: {minimumWidth: 72},
+    timeScale: {visible: showTime}
+  });
+}
+const line = (chart, color, extra) => chart.addLineSeries(Object.assign(
+  {color: color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+   crosshairMarkerVisible: false}, extra || {}));
+const lookup = data => new Map(data.filter(p => p.value !== undefined).map(p => [p.time, p.value]));
+
+DATA.panes.forEach((p, i) => {
+  const isDaily = i === DATA.panes.length - 1;
+  const box = document.createElement("div");
+  box.className = "col";
+  if (isDaily) box.style.height = "100%";
+  const hasSub = p.panel.length > 0;
+  box.innerHTML = '<div class="legend"></div><div class="price"></div>' + (hasSub ? '<div class="sub"></div>' : "");
+  document.getElementById(isDaily ? "bottom" : "top").appendChild(box);
+  const col = {p: p, legend: box.querySelector(".legend"), charts: []};
+
+  const price = make(box.querySelector(".price"), !hasSub);
+  const candles = price.addCandlestickSeries({upColor: "#26a69a", downColor: "#ef5350", borderVisible: false,
+    wickUpColor: "#26a69a", wickDownColor: "#ef5350"});
+  candles.setData(p.candles);
+  col.bars = new Map(p.candles.map(c => [c.time, c]));
+  col.times = p.candles.map(c => c.time);
+  col.overlays = p.overlays.map(o => { line(price, o.color).setData(o.data); return {o: o, v: lookup(o.data)}; });
+  p.levels.forEach(l => line(price, l.color, {lineStyle: LC.LineStyle.Dashed}).setData(l.data));
+  if (p.markers.length) candles.setMarkers(p.markers);
+  col.charts.push({chart: price, series: candles, value: t => col.bars.get(t) && col.bars.get(t).close});
+
+  col.panel = [];
+  if (hasSub) {
+    const sub = make(box.querySelector(".sub"), true);
+    if (p.rsi) {
+      const flat = level => p.candles.map(c => ({time: c.time, value: level}));
+      sub.addBaselineSeries(DATA.band.options).setData(flat(DATA.band.level));
+      DATA.guides.forEach(g => sub.addLineSeries(g.options).setData(flat(g.level)));
+    }
+    p.panel.forEach((o, k) => {
+      const s = line(sub, o.color);
+      s.setData(o.data);
+      const v = lookup(o.data);
+      col.panel.push({o: o, v: v});
+      if (k === 0) col.charts.push({chart: sub, series: s, value: t => v.get(t)});
+    });
+    // the price chart and its pane scroll and zoom together
+    let busy = false;
+    [[price, sub], [sub, price]].forEach(([a, b]) => a.timeScale().subscribeVisibleLogicalRangeChange(r => {
+      if (busy || !r) return;
+      busy = true; b.timeScale().setVisibleLogicalRange(r); busy = false;
+    }));
+  }
+  col.used = p.used.map(u => ({label: u.label, v: lookup(u.data)}));
+  columns.push(col);
+});
+
+// the bar of `col` that matches time t seen on a timeframe of rank `rank`
+function match(col, t, rank) {
+  const times = col.times;
+  let lo = 0, hi = times.length;                   // first index with time >= t
+  while (lo < hi) { const m = (lo + hi) >> 1; if (times[m] < t) lo = m + 1; else hi = m; }
+  if (col.p.rank > rank) return times[lo];         // longer candle containing t (labelled by its period end)
+  if (times[lo] === t) return t;
+  return times[lo - 1];                            // last shorter candle inside the hovered period
+}
+
+const day = t => new Date(t * 1000).toLocaleDateString("en-GB",
+  {day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"});
+const span = (text, color) => '<span style="color:' + color + ';margin-right:10px">' + text + "</span>";
+
+function legend(col, t) {
+  let a = "<b>" + DATA.title + " " + col.p.title + "</b> &nbsp;";
+  const bar = col.bars.get(t);
+  if (!bar) { col.legend.innerHTML = a + "no completed candle for this date"; return; }
+  a += (col.p.rank === 2 ? "month to " : col.p.rank === 1 ? "week to " : "") + day(t) + " &nbsp;O " + bar.open +
+    " H " + bar.high + " L " + bar.low + " C " + bar.close;
+  let b = col.overlays.concat(col.panel).map(x => span(x.o.label + " " + (x.v.has(t) ? x.v.get(t) : "-"), x.o.color));
+  b = b.concat(col.used.map(x => span(x.label + " " + (x.v.has(t) ? x.v.get(t) : "-"), "#555")));
+  col.legend.innerHTML = a + "<br>" + b.join("");
+}
+
+function rest() {
+  columns.forEach(col => {
+    col.charts.forEach(c => c.chart.clearCrosshairPosition());
+    legend(col, col.times[col.times.length - 1]);
+  });
+}
+
+function sync(source, sourceChart, t) {
+  columns.forEach(col => {
+    const m = col === source ? t : match(col, t, source.p.rank);
+    legend(col, m);
+    col.charts.forEach(c => {
+      if (c.chart === sourceChart) return;
+      const v = m === undefined ? undefined : c.value(m);
+      if (v === undefined) c.chart.clearCrosshairPosition();
+      else c.chart.setCrosshairPosition(v, m, c.series);
+    });
+  });
+}
+
+columns.forEach(col => col.charts.forEach(c => c.chart.subscribeCrosshairMove(param => {
+  if (!param.sourceEvent) return;                  // ignore the moves made by sync() itself
+  if (param.time === undefined) rest(); else sync(col, c.chart, param.time);
+})));
+document.body.addEventListener("mouseleave", rest);
+
+columns.forEach(col => {
+  const last = col.times[col.times.length - 1];
+  if (last === undefined) return;
+  const from = Math.max(col.times[0], last - col.p.months * 30.44 * 86400);
+  col.charts[0].chart.timeScale().setVisibleRange({from: from, to: last});
+});
+rest();
+</script></body></html>

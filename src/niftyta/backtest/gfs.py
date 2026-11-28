@@ -134,6 +134,7 @@ def simulate(daily: pd.DataFrame, sig_trigger: np.ndarray, cfg: dict, exit_mode:
     simulating a slice, otherwise Wilder smoothing restarts at the slice and mode B exits differ."""
     c_ = costs or load_costs()
     buy_r, sell_r, slip = buy_cost_rate(c_), sell_cost_rate(c_), c_["slippage_per_side"]
+    dp = c_.get("dp_charge_per_sell_inr", 0.0)
     son = closed_bars(daily, cfg["son_tf"])
     o, h, l, c = (son[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     rsi = rsi_series(son, cfg["rsi_period"]).to_numpy() if rsi is None else np.asarray(rsi, float)
@@ -153,7 +154,7 @@ def simulate(daily: pd.DataFrame, sig_trigger: np.ndarray, cfg: dict, exit_mode:
         nonlocal cash
         px = px_raw * (1 - slip)
         gross = qty * px
-        fee = gross * sell_r
+        fee = gross * sell_r + dp
         cash += gross - fee
         p.shares -= qty
         p.exit_gross += gross
@@ -249,4 +250,5 @@ def _finish(p: _Pos, exit_date, reason: str) -> dict:
             "entry_price": p.entry_px, "exit_price": exit_px, "pnl": pnl,
             "return": pnl / (p.entry_gross + p.entry_fee),
             "R": pnl / (p.risk * p.init_shares) if p.risk > 0 else np.nan,
-            "costs": p.entry_fee + p.exit_fees, "reason": reason}
+            "costs": p.entry_fee + p.exit_fees, "reason": reason, "stop": p.entry_px - p.risk,
+            "target": p.target}
